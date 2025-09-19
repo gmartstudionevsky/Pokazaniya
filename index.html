@@ -10,6 +10,7 @@
         /* Base styles */
         :root { --brand: #c49a5f; --brand-dark: #a47f48; --text: #262d36; }
         body { font-family: 'Circe', sans-serif; margin: 0; padding: 1rem; background: #fff; color: var(--text); }
+        body.modal-open { overflow: hidden !important; height: 100vh; } /* Блокировка скролла */
         header { text-align: center; margin-bottom: 2rem; }
         main { max-width: 600px; margin: 0 auto; background: #fff; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .form-section { margin-bottom: 1.5rem; }
@@ -19,12 +20,20 @@
         button:hover { background: var(--brand-dark); }
         /* Стилизованный file input */
         .photo-upload { margin-top: 0.5rem; }
-        .photo-upload input[type="file"] { display: none; } /* Скрыть системный input */
+        .photo-upload input[type="file"] { display: none; }
         .photo-upload label { display: inline-block; width: 100%; padding: 0.75rem; background: var(--brand); color: #fff; border-radius: 0.5rem; cursor: pointer; text-align: center; font-weight: 600; transition: background 0.3s; }
         .photo-upload label:hover { background: var(--brand-dark); }
-        /* Модалки — улучшены для overlay поверх всего */
-        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000; height: 100vh; } /* height: 100vh для полного покрытия */
-        .modal-window { background: #fff; padding: 2rem; border-radius: 1.5rem; max-width: 90%; max-height: 80vh; overflow-y: auto; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.2); animation: modalFadeIn 0.3s ease-out; }
+        /* Модалки */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100vh; /* Полное покрытие */
+            background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 99999; /* Максимальный z-index */
+            overflow: auto;
+        }
+        .modal-window {
+            background: #fff; padding: 2rem; border-radius: 1.5rem; max-width: 90%; max-height: 80vh;
+            overflow-y: auto; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            animation: modalFadeIn 0.3s ease-out; position: relative;
+        }
         .modal-window p { font-size: 1.1rem; margin: 0 auto 1rem; text-align: left; }
         .modal-actions { display: flex; gap: 1rem; justify-content: center; margin-top: 1rem; }
         .modal-actions button { width: auto; padding: 0.75rem 2rem; flex: 1; max-width: 150px; }
@@ -89,14 +98,18 @@
     <script>
         let currentApt = '';
         let meters = [];
-        let readings = {}; // { 'type_number': value }
-        let photos = {}; // { 'type_number': base64 }
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxbjAwdfq0M35WhRhgPzLIAZ7KL6ye-PQYNFYxVzgs4nug7r3zEQF2ChumX4grGPGThDA/exec'; // Ваш URL
+        let readings = {};
+        let photos = {};
+        const SCRIPT_URL = 'https://cors-anywhere.herokuapp.com/https://script.google.com/macros/s/AKfycbxV839cPHyOV4KL5Vt2xA9Qmufa_CBiN98MVaVkxzS5ju-8wbfjMyvi380dQWkelNQFEw/exec'; // Прокси для CORS
 
         function loadMeters() {
             currentApt = document.getElementById('apt-number').value.trim();
             if (!currentApt) return showAlert('Введите номер апартамента');
-            fetch(`${SCRIPT_URL}?action=get_meters&apt=${currentApt}`)
+            fetch(`${SCRIPT_URL}?action=get_meters&apt=${currentApt}`, {
+                method: 'GET',
+                mode: 'cors',
+                headers: { 'Content-Type': 'application/json' }
+            })
                 .then(res => {
                     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
                     return res.json();
@@ -114,7 +127,7 @@
                     }
                 })
                 .catch(err => {
-                    console.error('Fetch error:', err); // Для отладки
+                    console.error('Fetch error:', err);
                     showAlert('Ошибка загрузки: ' + err.message);
                 });
         }
@@ -124,7 +137,7 @@
             container.innerHTML = '';
             meters.forEach(meter => {
                 const key = `${meter.type}_${meter.number}`;
-                readings[key] = ''; // Инициализация
+                readings[key] = '';
                 const div = document.createElement('div');
                 div.className = 'meter-row';
                 div.innerHTML = `
@@ -146,7 +159,7 @@
             if (file.size > 5 * 1024 * 1024) return showAlert('Фото слишком большое (>5MB)');
             const reader = new FileReader();
             reader.onload = (e) => {
-                photos[key] = e.target.result; // base64
+                photos[key] = e.target.result;
             };
             reader.readAsDataURL(file);
         }
@@ -154,47 +167,50 @@
         function confirmSubmission() {
             const text = `Апартамент №${currentApt}<br>Показания:<br>` + Object.entries(readings).filter(([k, v]) => v).map(([k, v]) => `${k.split('_')[0]} ${k.split('_')[1]} = ${v}`).join('<br>');
             document.getElementById('confirm-text').innerHTML = text;
-            document.body.style.overflow = 'hidden'; // Блокируем скролл
+            document.body.classList.add('modal-open');
             document.getElementById('confirm-modal').style.display = 'flex';
         }
 
         function submitReadings() {
-            // Добавить base64 фото в readings
             Object.keys(readings).forEach(key => {
                 if (photos[key]) readings[key + '_photo'] = photos[key];
             });
             fetch(SCRIPT_URL, {
                 method: 'POST',
+                mode: 'cors',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ apt: currentApt, readings: readings })
             })
-            .then(res => {
-                if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-                return res.json();
-            })
-            .then(data => {
-                if (data.success) {
-                    showAlert('Показания отправлены успешно!');
-                    resetForm();
-                } else {
-                    showAlert(data.error || 'Ошибка отправки');
-                }
-            })
-            .catch(err => {
-                console.error('Fetch error:', err); // Для отладки
-                showAlert('Ошибка отправки: ' + err.message);
-            });
+                .then(res => {
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                    return res.json();
+                })
+                .then(data => {
+                    if (data.success) {
+                        showAlert('Показания отправлены успешно!');
+                        resetForm();
+                    } else {
+                        showAlert(data.error || 'Ошибка отправки');
+                    }
+                })
+                .catch(err => {
+                    console.error('Fetch error:', err);
+                    showAlert('Ошибка отправки: ' + err.message);
+                });
             closeConfirm();
         }
 
-        // Модалки
         function showDuplicateModal() {
-            document.body.style.overflow = 'hidden';
+            document.body.classList.add('modal-open');
             document.getElementById('duplicate-modal').style.display = 'flex';
         }
 
         function loadExistingReadings() {
-            fetch(`${SCRIPT_URL}?action=get_existing&apt=${currentApt}`)
+            fetch(`${SCRIPT_URL}?action=get_existing&apt=${currentApt}`, {
+                method: 'GET',
+                mode: 'cors',
+                headers: { 'Content-Type': 'application/json' }
+            })
                 .then(res => {
                     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
                     return res.json();
@@ -208,8 +224,8 @@
                         });
                     }
                     document.getElementById('duplicate-modal').style.display = 'none';
-                    document.body.style.overflow = 'auto';
-                    renderMeters(); // Re-render with values
+                    document.body.classList.remove('modal-open');
+                    renderMeters();
                 })
                 .catch(err => {
                     console.error('Fetch error:', err);
@@ -219,24 +235,24 @@
 
         function cancelApartment() {
             document.getElementById('duplicate-modal').style.display = 'none';
-            document.body.style.overflow = 'auto';
+            document.body.classList.remove('modal-open');
             document.getElementById('apt-number').value = '';
         }
 
         function showAlert(text) {
-            document.body.style.overflow = 'hidden';
+            document.body.classList.add('modal-open');
             document.getElementById('alert-text').textContent = text;
             document.getElementById('alert-modal').style.display = 'flex';
         }
 
         function closeAlert() {
             document.getElementById('alert-modal').style.display = 'none';
-            document.body.style.overflow = 'auto';
+            document.body.classList.remove('modal-open');
         }
 
         function closeConfirm() {
             document.getElementById('confirm-modal').style.display = 'none';
-            document.body.style.overflow = 'auto';
+            document.body.classList.remove('modal-open');
         }
 
         function resetForm() {
@@ -248,7 +264,6 @@
             meters = [];
         }
 
-        // Init
         document.getElementById('apt-number').focus();
     </script>
 </body>
