@@ -343,17 +343,20 @@
       btnSend.disabled = true;
       btnSend.textContent = 'Отправка…';
       try {
-        const res = await fetch(SCRIPT_URL, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-          body: JSON.stringify({ apt: currentApt, readings: payloadReadings })
-        });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        if (!data.success) throw new Error(data.error || 'Неизвестная ошибка');
+// СТАЛО — без headers (браузер отправит text/plain; preflight не будет)
+const res = await fetch(SCRIPT_URL, {
+  method: 'POST',
+  body: JSON.stringify({ apt: currentApt, readings: payloadReadings })
+});
 
-        showAlert('Показания отправлены успешно!');
-        resetForm();
+// парсим как текст, потом JSON (т.к. content-type теперь text/plain)
+const text = await res.text();
+let data;
+try { data = JSON.parse(text); } catch {
+  throw new Error('Некорректный ответ сервера');
+}
+if (!res.ok) throw new Error(`HTTP ${res.status}`);
+if (!data.success) throw new Error(data.error || 'Неизвестная ошибка');
       } catch (err) {
         console.error(err);
         showAlert('Ошибка отправки: ' + err.message);
