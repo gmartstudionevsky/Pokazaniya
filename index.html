@@ -5,23 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Подача показаний счётчиков | ARTSTUDIO Nevsky</title>
     <style>
-        /* Аналогично предыдущему: Circe fonts, base styles, modal, form sections */
+        /* Circe fonts */
         @font-face { font-family: 'Circe'; src: url('./fonts/circe.woff2') format('woff2'); font-weight: 400; }
-        body { font-family: 'Circe', sans-serif; margin: 0; padding: 1rem; background: #fff; color: #262d36; }
+        /* Base styles */
+        :root { --brand: #c49a5f; --brand-dark: #a47f48; --text: #262d36; }
+        body { font-family: 'Circe', sans-serif; margin: 0; padding: 1rem; background: #fff; color: var(--text); }
         header { text-align: center; margin-bottom: 2rem; }
         main { max-width: 600px; margin: 0 auto; background: #fff; padding: 2rem; border-radius: 1rem; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
         .form-section { margin-bottom: 1.5rem; }
         .form-section h2 { font-size: 1.5rem; font-weight: 400; margin: 0 0 0.5rem; }
         input[type="number"], button { width: 100%; padding: 0.75rem; border: 1px solid #ccc; border-radius: 0.5rem; font: 1rem 'Circe', sans-serif; box-sizing: border-box; }
-        button { background: #c49a5f; color: #fff; font-weight: 700; border: none; cursor: pointer; }
-        button:hover { background: #a47f48; }
-        input[type="file"] { margin-top: 0.5rem; }
+        button { background: var(--brand); color: #fff; font-weight: 700; border: none; cursor: pointer; transition: background 0.3s; }
+        button:hover { background: var(--brand-dark); }
+        /* Стилизованный file input */
+        .photo-upload { margin-top: 0.5rem; }
+        .photo-upload input[type="file"] { display: none; } /* Скрыть системный input */
+        .photo-upload label { display: inline-block; width: 100%; padding: 0.75rem; background: var(--brand); color: #fff; border-radius: 0.5rem; cursor: pointer; text-align: center; font-weight: 600; transition: background 0.3s; }
+        .photo-upload label:hover { background: var(--brand-dark); }
+        /* Модалки */
         #modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
-        #modal-window { background: #fff; padding: 2rem; border-radius: 1.5rem; max-width: 90%; max-height: 80vh; overflow-y: auto; text-align: center; }
+        #modal-window { background: #fff; padding: 2rem; border-radius: 1.5rem; max-width: 90%; max-height: 80vh; overflow-y: auto; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.2); animation: modalFadeIn 0.3s ease-out; }
+        #modal-window p { font-size: 1.1rem; margin: 0 auto 1rem; text-align: left; }
+        .modal-actions { display: flex; gap: 1rem; justify-content: center; margin-top: 1rem; }
+        .modal-actions button { width: auto; padding: 0.75rem 2rem; flex: 1; max-width: 150px; }
+        @keyframes modalFadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
         .meter-row { display: flex; flex-direction: column; margin-bottom: 1rem; padding: 1rem; background: #f8f9fa; border-radius: 0.5rem; }
         .meter-info { font-weight: 600; margin-bottom: 0.5rem; }
-        .photo-upload { margin-top: 0.5rem; }
-        @media (max-width: 600px) { main { padding: 1rem; } input, button { padding: 0.5rem; font-size: 0.95rem; } }
+        /* Mobile */
+        @media (max-width: 600px) { main { padding: 1rem; } input, button { padding: 0.5rem; font-size: 0.95rem; } .modal-actions { flex-direction: column; gap: 0.5rem; } }
     </style>
 </head>
 <body>
@@ -37,7 +48,6 @@
                 <button onclick="loadMeters()">Загрузить счётчики</button>
             </div>
         </div>
-
         <!-- Шаг 2: Ввод показаний -->
         <div id="meters-step" style="display: none;">
             <h2 id="apt-title">Апартамент №</h2>
@@ -47,39 +57,41 @@
             </form>
         </div>
     </main>
-
     <!-- Модалка дубликатов -->
     <div id="duplicate-modal" class="modal-overlay" style="display: none;">
         <div id="modal-window">
             <p>По апартаменту показания уже поданы за период. Показать текущие?</p>
-            <button onclick="loadExistingReadings()">Скорректировать</button>
-            <button onclick="cancelApartment()">Отмена</button>
+            <div class="modal-actions">
+                <button onclick="loadExistingReadings()">Скорректировать</button>
+                <button onclick="cancelApartment()">Отмена</button>
+            </div>
         </div>
     </div>
-
     <!-- Модалка подтверждения -->
     <div id="confirm-modal" class="modal-overlay" style="display: none;">
         <div id="modal-window">
             <p id="confirm-text"></p>
-            <button onclick="submitReadings()">Подтвердить</button>
-            <button onclick="closeConfirm()">Отмена</button>
+            <div class="modal-actions">
+                <button onclick="submitReadings()">Подтвердить</button>
+                <button onclick="closeConfirm()">Отмена</button>
+            </div>
         </div>
     </div>
-
     <!-- Модалка ошибки/успеха -->
     <div id="alert-modal" class="modal-overlay" style="display: none;">
         <div id="modal-window">
             <p id="alert-text"></p>
-            <button onclick="closeAlert()">OK</button>
+            <div class="modal-actions">
+                <button onclick="closeAlert()">OK</button>
+            </div>
         </div>
     </div>
-
     <script>
         let currentApt = '';
         let meters = [];
         let readings = {}; // { 'type_number': value }
-        let photos = {}; // { 'type_number': file }
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxGQRVU64DY-8um6p5QdcfEoaWQUO3WtQ9AzMnOaPEhzDL3nvuB6r0e8D6UpQW9m92-bQ/exec'; // Замените на ID вашего Apps Script
+        let photos = {}; // { 'type_number': base64 }
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxGQRVU64DY-8um6p5QdcfEoaWQUO3WtQ9AzMnOaPEhzDL3nvuB6r0e8D6UpQW9m92-bQ/exec'; // Ваш URL
 
         function loadMeters() {
             currentApt = document.getElementById('apt-number').value.trim();
@@ -122,8 +134,15 @@
             readings[key] = value;
         }
 
-        function updatePhoto(key, file) {
-            photos[key] = file;
+        function updatePhoto(key, files) {
+            const file = files[0];
+            if (!file) return;
+            if (file.size > 5 * 1024 * 1024) return showAlert('Фото слишком большое (>5MB)');
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                photos[key] = e.target.result; // base64
+            };
+            reader.readAsDataURL(file);
         }
 
         function confirmSubmission() {
@@ -133,16 +152,14 @@
         }
 
         function submitReadings() {
-            const formData = new FormData();
-            formData.append('apt', currentApt);
-            formData.append('readings', JSON.stringify(readings));
-            Object.entries(photos).forEach(([key, file]) => {
-                if (file) formData.append(key, file);
+            // Добавить base64 фото в readings
+            Object.keys(readings).forEach(key => {
+                if (photos[key]) readings[key + '_photo'] = photos[key];
             });
-
             fetch(SCRIPT_URL, {
                 method: 'POST',
-                body: formData
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ apt: currentApt, readings: readings })
             })
             .then(res => res.json())
             .then(data => {
@@ -157,7 +174,7 @@
             closeConfirm();
         }
 
-        // Модалки
+        // Модалки (улучшены стилями выше)
         function showDuplicateModal() {
             document.getElementById('duplicate-modal').style.display = 'flex';
         }
@@ -169,14 +186,14 @@
                     if (data.readings) {
                         Object.entries(data.readings).forEach(([key, value]) => {
                             readings[key] = value;
-                            // Set input values
-                            document.querySelector(`input[onchange="updateReading('${key}', this.value)"]`).value = value;
+                            const input = document.querySelector(`input[onchange="updateReading('${key}', this.value)"]`);
+                            if (input) input.value = value;
                         });
                     }
                     document.getElementById('duplicate-modal').style.display = 'none';
                     renderMeters(); // Re-render with values
-                });
-            closeConfirm();
+                })
+                .catch(err => showAlert('Ошибка загрузки существующих: ' + err));
         }
 
         function cancelApartment() {
@@ -211,4 +228,3 @@
     </script>
 </body>
 </html>
-```
