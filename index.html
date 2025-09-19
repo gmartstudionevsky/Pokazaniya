@@ -22,10 +22,10 @@
         .photo-upload input[type="file"] { display: none; } /* Скрыть системный input */
         .photo-upload label { display: inline-block; width: 100%; padding: 0.75rem; background: var(--brand); color: #fff; border-radius: 0.5rem; cursor: pointer; text-align: center; font-weight: 600; transition: background 0.3s; }
         .photo-upload label:hover { background: var(--brand-dark); }
-        /* Модалки */
-        #modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
-        #modal-window { background: #fff; padding: 2rem; border-radius: 1.5rem; max-width: 90%; max-height: 80vh; overflow-y: auto; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.2); animation: modalFadeIn 0.3s ease-out; }
-        #modal-window p { font-size: 1.1rem; margin: 0 auto 1rem; text-align: left; }
+        /* Модалки — улучшены для overlay поверх всего */
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 10000; height: 100vh; } /* height: 100vh для полного покрытия */
+        .modal-window { background: #fff; padding: 2rem; border-radius: 1.5rem; max-width: 90%; max-height: 80vh; overflow-y: auto; text-align: center; box-shadow: 0 8px 20px rgba(0,0,0,0.2); animation: modalFadeIn 0.3s ease-out; }
+        .modal-window p { font-size: 1.1rem; margin: 0 auto 1rem; text-align: left; }
         .modal-actions { display: flex; gap: 1rem; justify-content: center; margin-top: 1rem; }
         .modal-actions button { width: auto; padding: 0.75rem 2rem; flex: 1; max-width: 150px; }
         @keyframes modalFadeIn { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
@@ -59,7 +59,7 @@
     </main>
     <!-- Модалка дубликатов -->
     <div id="duplicate-modal" class="modal-overlay" style="display: none;">
-        <div id="modal-window">
+        <div class="modal-window">
             <p>По апартаменту показания уже поданы за период. Показать текущие?</p>
             <div class="modal-actions">
                 <button onclick="loadExistingReadings()">Скорректировать</button>
@@ -69,7 +69,7 @@
     </div>
     <!-- Модалка подтверждения -->
     <div id="confirm-modal" class="modal-overlay" style="display: none;">
-        <div id="modal-window">
+        <div class="modal-window">
             <p id="confirm-text"></p>
             <div class="modal-actions">
                 <button onclick="submitReadings()">Подтвердить</button>
@@ -79,7 +79,7 @@
     </div>
     <!-- Модалка ошибки/успеха -->
     <div id="alert-modal" class="modal-overlay" style="display: none;">
-        <div id="modal-window">
+        <div class="modal-window">
             <p id="alert-text"></p>
             <div class="modal-actions">
                 <button onclick="closeAlert()">OK</button>
@@ -91,13 +91,16 @@
         let meters = [];
         let readings = {}; // { 'type_number': value }
         let photos = {}; // { 'type_number': base64 }
-        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyk24SgSaPJdLTdbvOmGBiFIfFOLcikCafOU33ApxWvsh7Dvu8B5PhRZXUfPIOYpfdsSg/exec'; // Ваш URL
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbxGQRVU64DY-8um6p5QdcfEoaWQUO3WtQ9AzMnOaPEhzDL3nvuB6r0e8D6UpQW9m92-bQ/exec'; // Ваш URL
 
         function loadMeters() {
             currentApt = document.getElementById('apt-number').value.trim();
             if (!currentApt) return showAlert('Введите номер апартамента');
             fetch(`${SCRIPT_URL}?action=get_meters&apt=${currentApt}`)
-                .then(res => res.json())
+                .then(res => {
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                    return res.json();
+                })
                 .then(data => {
                     if (data.error) return showAlert(data.error);
                     if (data.duplicate) {
@@ -110,7 +113,10 @@
                         document.getElementById('apt-title').textContent = `Апартамент №${currentApt}`;
                     }
                 })
-                .catch(err => showAlert('Ошибка загрузки: ' + err));
+                .catch(err => {
+                    console.error('Fetch error:', err); // Для отладки
+                    showAlert('Ошибка загрузки: ' + err.message);
+                });
         }
 
         function renderMeters() {
@@ -148,6 +154,7 @@
         function confirmSubmission() {
             const text = `Апартамент №${currentApt}<br>Показания:<br>` + Object.entries(readings).filter(([k, v]) => v).map(([k, v]) => `${k.split('_')[0]} ${k.split('_')[1]} = ${v}`).join('<br>');
             document.getElementById('confirm-text').innerHTML = text;
+            document.body.style.overflow = 'hidden'; // Блокируем скролл
             document.getElementById('confirm-modal').style.display = 'flex';
         }
 
@@ -161,7 +168,10 @@
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ apt: currentApt, readings: readings })
             })
-            .then(res => res.json())
+            .then(res => {
+                if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                return res.json();
+            })
             .then(data => {
                 if (data.success) {
                     showAlert('Показания отправлены успешно!');
@@ -170,18 +180,25 @@
                     showAlert(data.error || 'Ошибка отправки');
                 }
             })
-            .catch(err => showAlert('Ошибка: ' + err));
+            .catch(err => {
+                console.error('Fetch error:', err); // Для отладки
+                showAlert('Ошибка отправки: ' + err.message);
+            });
             closeConfirm();
         }
 
-        // Модалки (улучшены стилями выше)
+        // Модалки
         function showDuplicateModal() {
+            document.body.style.overflow = 'hidden';
             document.getElementById('duplicate-modal').style.display = 'flex';
         }
 
         function loadExistingReadings() {
             fetch(`${SCRIPT_URL}?action=get_existing&apt=${currentApt}`)
-                .then(res => res.json())
+                .then(res => {
+                    if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                    return res.json();
+                })
                 .then(data => {
                     if (data.readings) {
                         Object.entries(data.readings).forEach(([key, value]) => {
@@ -191,27 +208,35 @@
                         });
                     }
                     document.getElementById('duplicate-modal').style.display = 'none';
+                    document.body.style.overflow = 'auto';
                     renderMeters(); // Re-render with values
                 })
-                .catch(err => showAlert('Ошибка загрузки существующих: ' + err));
+                .catch(err => {
+                    console.error('Fetch error:', err);
+                    showAlert('Ошибка загрузки существующих: ' + err.message);
+                });
         }
 
         function cancelApartment() {
             document.getElementById('duplicate-modal').style.display = 'none';
+            document.body.style.overflow = 'auto';
             document.getElementById('apt-number').value = '';
         }
 
         function showAlert(text) {
+            document.body.style.overflow = 'hidden';
             document.getElementById('alert-text').textContent = text;
             document.getElementById('alert-modal').style.display = 'flex';
         }
 
         function closeAlert() {
             document.getElementById('alert-modal').style.display = 'none';
+            document.body.style.overflow = 'auto';
         }
 
         function closeConfirm() {
             document.getElementById('confirm-modal').style.display = 'none';
+            document.body.style.overflow = 'auto';
         }
 
         function resetForm() {
